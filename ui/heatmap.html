@@ -93,18 +93,6 @@ body { background: #232a2e; color: #d3c6aa; font-family: 'Inter', -apple-system,
 .person-pip.on { border-color: transparent; }
 .persons-text { font-size: 12px; color: #859289; font-weight: 500; }
 
-/* Vitals */
-.vitals-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
-.vital-card { background: #343f44; border: 1px solid #3d484d; border-radius: 8px; padding: 10px; position: relative; overflow: hidden; }
-.vital-stripe { position: absolute; top: 0; left: 0; right: 0; height: 2px; border-radius: 8px 8px 0 0; opacity: 0.5; }
-.vital-header { display: flex; align-items: center; gap: 5px; margin-bottom: 5px; }
-.vital-icon { font-size: 14px; }
-.vital-label { font-size: 9px; color: #7a8478; text-transform: uppercase; letter-spacing: 0.5px; }
-.vital-value { font-family: 'JetBrains Mono', monospace; font-size: 22px; font-weight: 600; }
-.vital-unit { font-size: 10px; color: #7a8478; margin-left: 2px; }
-.vital-conf { width: 100%; height: 2px; background: #3d484d; border-radius: 1px; margin-top: 5px; }
-.vital-conf-fill { height: 100%; border-radius: 1px; transition: width 0.4s; }
-
 /* Node scores */
 .node-row { display: flex; align-items: center; gap: 8px; margin-bottom: 7px; }
 .node-row:last-child { margin-bottom: 0; }
@@ -150,15 +138,6 @@ body { background: #232a2e; color: #d3c6aa; font-family: 'Inter', -apple-system,
 .fullscreen-body .spec-panel { position: relative; min-height: 0; overflow: hidden; }
 .fullscreen-body .spec-panel canvas { width: 100%; height: 100%; display: block; }
 .fullscreen-body .spec-label { font-size: 12px; }
-
-@keyframes heartPulse {
-  0%, 100% { transform: scale(1); }
-  15% { transform: scale(1.3); }
-  30% { transform: scale(1); }
-  45% { transform: scale(1.15); }
-  60% { transform: scale(1); }
-}
-.heart-pulse { display: inline-block; }
 
 .sidebar::-webkit-scrollbar { width: 3px; }
 .sidebar::-webkit-scrollbar-track { background: transparent; }
@@ -209,23 +188,6 @@ body { background: #232a2e; color: #d3c6aa; font-family: 'Inter', -apple-system,
           <div class="person-pip"></div>
         </div>
         <span class="persons-text" id="personsText">No persons</span>
-      </div>
-    </div>
-    <div class="card">
-      <div class="card-title">Vital Signs</div>
-      <div class="vitals-grid">
-        <div class="vital-card">
-          <div class="vital-stripe" style="background:#e67e80"></div>
-          <div class="vital-header"><span class="vital-icon heart-pulse" id="heartIcon" style="color:#e67e80">&#9829;</span><span class="vital-label">Heart Rate</span></div>
-          <div><span class="vital-value" id="hrVal" style="color:#e67e80">—</span><span class="vital-unit">bpm</span></div>
-          <div class="vital-conf"><div class="vital-conf-fill" id="hrConf" style="width:0;background:#e67e80"></div></div>
-        </div>
-        <div class="vital-card">
-          <div class="vital-stripe" style="background:#7fbbb3"></div>
-          <div class="vital-header"><span class="vital-icon" style="color:#7fbbb3">&#9681;</span><span class="vital-label">Breathing</span></div>
-          <div><span class="vital-value" id="brVal" style="color:#7fbbb3">—</span><span class="vital-unit">br/m</span></div>
-          <div class="vital-conf"><div class="vital-conf-fill" id="brConf" style="width:0;background:#7fbbb3"></div></div>
-        </div>
       </div>
     </div>
     <div class="card">
@@ -305,10 +267,9 @@ const nodeColors = ['#7fbbb3', '#d699b6', '#dbbc7f'];
 const nodePower=[0,0,0], nodeMotion=[0,0,0], nodeMotionSmooth=[0,0,0];
 const prevAmps=[null,null,null];
 const SPEC_W=150, specData=[[],[],[]];
-let lastClassification=null, lastFeatures=null, lastVitals=null;
+let lastClassification=null, lastFeatures=null;
 let lastEstPersons=0;
-const hrHistory=[];
-const CLASS_HISTORY_SIZE=5, classHistory=[];
+const CLASS_HISTORY_SIZE=2, classHistory=[];
 let smoothedClass='absent', smoothedConf=0;
 let totalMsgs=0, frameCount=0, lastFpsTime=Date.now();
 const timelineData=[], TIMELINE_MAX=300;
@@ -370,10 +331,6 @@ function processMessage(d){
   }
   if(d.estimated_persons!==undefined) lastEstPersons=d.estimated_persons;
   if(d.features) lastFeatures=d.features;
-  if(d.vital_signs){
-    lastVitals=d.vital_signs;
-    if(lastVitals.heart_rate_bpm>0){ hrHistory.push(lastVitals.heart_rate_bpm); if(hrHistory.length>60) hrHistory.shift(); }
-  }
 }
 
 function drawRoom(){
@@ -474,22 +431,6 @@ function drawRoom(){
     roomCtx.fillText(nodeMotion[i].toFixed(1),x,y+r+9*dpr);
   }
 
-  // HR waveform
-  if(hrHistory.length>5){
-    const cx=pad+rw-90*dpr,cy=pad+10*dpr,cw=75*dpr,ch=22*dpr;
-    roomCtx.save();roomCtx.globalAlpha=0.5;
-    roomCtx.strokeStyle='#e67e80';roomCtx.lineWidth=1*dpr;roomCtx.beginPath();
-    const hrMin=Math.min(...hrHistory)-5,hrMax=Math.max(...hrHistory)+5,hrR=hrMax-hrMin||1;
-    for(let i=0;i<hrHistory.length;i++){
-      const x=cx+(i/(hrHistory.length-1))*cw, y=cy+ch-((hrHistory[i]-hrMin)/hrR)*ch;
-      i===0?roomCtx.moveTo(x,y):roomCtx.lineTo(x,y);
-    }
-    roomCtx.stroke();
-    roomCtx.fillStyle='#e67e80';roomCtx.font=`600 ${7*dpr}px Inter`;
-    roomCtx.textAlign='right';roomCtx.fillText('HR',cx-3*dpr,cy+ch/2+3*dpr);
-    roomCtx.restore();
-  }
-
   // Scale
   const lx=pad+rw-12*dpr,ly=pad+rh-55*dpr,lh=45*dpr,lw=6*dpr;
   for(let i=0;i<lh;i++){const[r,g,b]=heatColor(1-i/lh);roomCtx.fillStyle=`rgb(${r},${g},${b})`;roomCtx.fillRect(lx,ly+i,lw,1);}
@@ -574,19 +515,6 @@ function updateUI(){
   }
   document.getElementById('personsText').textContent=
     lastEstPersons===0?'No persons':lastEstPersons+(lastEstPersons===1?' person':' persons');
-  // Vitals
-  if(lastVitals){
-    const hr=lastVitals.heart_rate_bpm||lastVitals.heartbeat_bpm||0;
-    const br=lastVitals.breathing_rate_bpm||lastVitals.breathing_rpm||0;
-    document.getElementById('hrVal').textContent=hr>0?hr.toFixed(0):'—';
-    document.getElementById('brVal').textContent=br>0?br.toFixed(1):'—';
-    document.getElementById('hrConf').style.width=((lastVitals.heartbeat_confidence||0)*100)+'%';
-    document.getElementById('brConf').style.width=((lastVitals.breathing_confidence||0)*100)+'%';
-    const hi=document.getElementById('heartIcon');
-    if((lastVitals.heartbeat_confidence||0)>0.3&&hr>0)
-      hi.style.animation=`heartPulse ${(60/hr).toFixed(2)}s ease-in-out infinite`;
-    else hi.style.animation='none';
-  }
   // Nodes
   const maxM=Math.max(0.5,...nodeMotionSmooth);
   for(let i=0;i<3;i++){

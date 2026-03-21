@@ -10,8 +10,8 @@ const NUM_NODES: usize = 3;
 const NUM_SUBCARRIERS: usize = 56;
 const FEATURES: usize = NUM_NODES * NUM_SUBCARRIERS; // 168
 const WINDOW: usize = 100;
-const SUBSAMPLE: usize = 5;
-const INFER_EVERY: usize = 5;
+const SUBSAMPLE: usize = 2;
+const INFER_EVERY: usize = 1;
 const CLASSES: [&str; 4] = ["empty", "lying", "walking", "sitting"];
 
 // ── Tiny NN ops ──────────────────────────────────────────────────────────────
