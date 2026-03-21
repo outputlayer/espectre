@@ -1,0 +1,44 @@
+[package]
+name = "espectre-server"
+version.workspace = true
+edition.workspace = true
+authors.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "ESP32 WiFi CSI sensing server — presence detection, movement tracking, vital signs & sleep monitoring"
+keywords = ["wifi-sensing", "csi", "esp32", "presence-detection", "vital-signs"]
+
+[lib]
+name = "espectre_server"
+path = "src/lib.rs"
+
+[[bin]]
+name = "espectre-server"
+path = "src/main.rs"
+
+[dependencies]
+# Web framework
+axum = { workspace = true }
+tower-http = { version = "0.5", features = ["fs", "cors", "set-header"] }
+tokio = { workspace = true, features = ["full", "process"] }
+futures-util = "0.3"
+
+# Serialization
+serde = { workspace = true }
+serde_json = "1.0"
+
+# Logging
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+
+# Time
+chrono = { version = "0.4", features = ["serde"] }
+
+# CLI
+clap = { workspace = true }
+
+# WiFi scanning (Windows multi-BSSID pipeline)
+wifi-densepose-wifiscan = { path = "../wifiscan" }
+
+[dev-dependencies]
+tempfile = "3.10"

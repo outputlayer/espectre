@@ -1,0 +1,38 @@
+# Build
+target/
+*.o
+*.a
+*.so
+*.dylib
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# Credentials & secrets
+*.bin
+*.env
+.env
+credentials*
+secrets*
+
+# ESP32 NVS partition images (may contain WiFi passwords)
+nvs_wifi.bin
+nvs_config.bin
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Docker
+docker-compose.override.yml
+
+# Data (generated at runtime)
+data/
+*.jsonl
+
+# Rust
+**/*.rs.bk

@@ -1,0 +1,18 @@
+[package]
+name = "wifi-densepose-wifiscan"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+description = "Multi-BSSID WiFi scanning layer"
+
+[dependencies]
+tracing = { workspace = true }
+serde = { workspace = true, optional = true }
+tokio = { workspace = true, optional = true }
+
+[features]
+default = ["serde", "pipeline"]
+serde = ["dep:serde"]
+pipeline = []
+wlanapi = ["dep:tokio"]
