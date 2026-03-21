@@ -3006,42 +3006,72 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                             let df = features.dominant_freq_hz as f32;
                             let cp = features.change_points as f32;
 
+                            // Clip volatile features to training range (prevents outlier spikes)
+                            let motion_max_w_c = motion_max_w.min(100.0);
+                            let motion_std_w_c = motion_std_w.min(30.0);
+                            let motion_ema_c = ns.motion_ema.min(25.0);
+                            let motion_mean_w_c = motion_mean_w.min(20.0);
+                            let accel_c = accel.min(120.0);
+
                             let fv: [f32; 27] = [
                                 amp_mean, amp_std, amp_range, low_m, mid_m, high_m,
                                 low_s, mid_s, high_s,
                                 turbulence, ns.turb_ema,
-                                diff_sq, abs_diff, ns.motion_ema, accel,
+                                diff_sq, abs_diff, motion_ema_c, accel_c,
                                 ema_dev,
-                                motion_mean_w, motion_std_w, motion_max_w,
+                                motion_mean_w_c, motion_std_w_c, motion_max_w_c,
                                 turb_mean_w, turb_std_w,
                                 variance, mbp, bbp, sp, df, cp,
                             ];
 
+                            if s.tick % 200 == 0 {
+                                eprintln!("FV node={}: [{:.1},{:.1},{:.1},{:.1},{:.1},{:.1},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.2},{:.1},{:.1},{:.1},{:.1},{:.2},{:.1}]",
+                                    node_id, fv[0],fv[1],fv[2],fv[3],fv[4],fv[5],fv[6],fv[7],fv[8],fv[9],fv[10],fv[11],fv[12],fv[13],fv[14],fv[15],fv[16],fv[17],fv[18],fv[19],fv[20],fv[21],fv[22],fv[23],fv[24],fv[25],fv[26]);
+                            }
                             let (cls_idx, conf, cls_name) = trained_mlp::classify(&fv);
 
-                            // Temporal smoothing: majority vote over last 30 predictions
+                            // Fusion: ESPectre is primary (reliable presence/absence),
+                            // MLP refines the class only when ESPectre confirms presence.
                             s.mlp_vote_window.push(cls_idx);
                             if s.mlp_vote_window.len() > 30 { s.mlp_vote_window.remove(0); }
 
-                            if s.mlp_vote_window.len() >= 10 {
-                                let mut counts = [0usize; 5];
-                                for &v in &s.mlp_vote_window { if v < 5 { counts[v] += 1; } }
-                                let voted = counts.iter().enumerate().max_by_key(|&(_, c)| c).unwrap().0;
-                                let vote_conf = counts[voted] as f32 / s.mlp_vote_window.len() as f32;
+                            let mut counts = [0usize; 5];
+                            for &v in &s.mlp_vote_window { if v < 5 { counts[v] += 1; } }
+                            let voted = counts.iter().enumerate().max_by_key(|&(_, c)| c).unwrap().0;
+                            let vote_conf = counts[voted] as f32 / s.mlp_vote_window.len() as f32;
+
+                            if median_score < 1.0 {
+                                // ESPectre: no motion → absent (regardless of MLP)
+                                classification.motion_level = "absent".to_string();
+                                classification.presence = false;
+                                classification.confidence = (1.0 - median_score / 1.0).clamp(0.5, 1.0) as f64;
+                            } else if median_score > 3.0 {
+                                // ESPectre: presence confirmed → use MLP for class detail
                                 let voted_name = match voted {
-                                    0 => "absent", 1 => "present_still", 2 => "present_moving",
-                                    3 => "active", 4 => "lying_still", _ => "absent"
+                                    1 => "present_still", 2 => "present_moving",
+                                    3 => "active", 4 => "lying_still", _ => "present_still"
                                 };
-                                // MLP overrides if vote confidence > 50%
-                                if vote_conf > 0.5 {
+                                classification.motion_level = voted_name.to_string();
+                                classification.presence = true;
+                                classification.confidence = (median_score / 10.0).clamp(0.3, 1.0) as f64;
+                            } else {
+                                // ESPectre: ambiguous (1-3) → use MLP vote but trust ESPectre for presence
+                                let has_presence = median_score > 2.0 && nodes_above_2 >= 1;
+                                if has_presence {
+                                    let voted_name = match voted {
+                                        1 => "present_still", 2 => "present_moving",
+                                        3 => "active", 4 => "lying_still", _ => "present_still"
+                                    };
                                     classification.motion_level = voted_name.to_string();
-                                    classification.presence = voted != 0;
-                                    classification.confidence = vote_conf as f64;
+                                } else {
+                                    classification.motion_level = "absent".to_string();
                                 }
-                                if s.tick % 500 == 0 {
-                                    eprintln!("MLP node={}: {} ({:.2}) | vote: {} ({:.0}%) | esp_median: {:.1}",
-                                        node_id, cls_name, conf, voted_name, vote_conf * 100.0, median_score);
-                                }
+                                classification.presence = has_presence;
+                                classification.confidence = (median_score / 10.0).clamp(0.1, 0.6) as f64;
+                            }
+                            if s.tick % 500 == 0 {
+                                eprintln!("FUSED: esp_med={:.1} nodes>2={} → {} | MLP: {} ({:.2})",
+                                    median_score, nodes_above_2, classification.motion_level, cls_name, conf);
                             }
                         }
                     }
