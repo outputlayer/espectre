@@ -135,10 +135,10 @@ body { background: #232a2e; color: #d3c6aa; font-family: 'Inter', -apple-system,
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .fullscreen-close:hover { background: #3d484d; color: #d3c6aa; }
-.fullscreen-body { flex: 1; min-height: 0; display: flex; }
+.fullscreen-body { flex: 1; min-height: 0; display: flex; overflow: hidden; }
 .fullscreen-body canvas { width: 100%; height: 100%; }
-.fullscreen-body .specs { width: 100%; display: grid; grid-template-rows: 1fr 1fr 1fr; gap: 2px; }
-.fullscreen-body .spec-panel { position: relative; min-height: 0; }
+.fullscreen-body .specs { width: 100%; height: 100%; display: grid; grid-template-rows: 1fr 1fr 1fr; gap: 4px; }
+.fullscreen-body .spec-panel { position: relative; min-height: 0; overflow: hidden; }
 .fullscreen-body .spec-panel canvas { width: 100%; height: 100%; display: block; }
 .fullscreen-body .spec-label { font-size: 12px; }
 
@@ -631,8 +631,11 @@ function openFullscreen(mode) {
       '<div class="spec-panel"><span class="spec-label">Node 2</span><canvas id="fsc2"></canvas></div>'+
       '<div class="spec-panel"><span class="spec-label">Node 3</span><canvas id="fsc3"></canvas></div></div>';
     fsSpecCanvases=['fsc1','fsc2','fsc3'].map(id=>document.getElementById(id));
-    fsSpecCanvases.forEach(c=>{const r=c.parentElement.getBoundingClientRect();c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr);});
-    fsSpecCtxs=fsSpecCanvases.map(c=>c.getContext('2d'));
+    // Delay canvas sizing to allow layout to compute
+    requestAnimationFrame(()=>{
+      fsSpecCanvases.forEach(c=>{const r=c.parentElement.getBoundingClientRect();c.width=Math.round(r.width*dpr);c.height=Math.round(r.height*dpr);});
+      fsSpecCtxs=fsSpecCanvases.map(c=>c.getContext('2d'));
+    });
   }
 }
 function closeFullscreen(){fsMode=null;document.getElementById('fsOverlay').classList.remove('active');fsSpecCanvases=[];fsSpecCtxs=[];fsTlCanvas=null;fsTlCtx=null;}
