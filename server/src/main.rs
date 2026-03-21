@@ -390,6 +390,8 @@ struct AppStateInner {
     /// Fused ESPectre motion result.
     espectre_motion: bool,
     espectre_max_score: f32,
+    /// Hysteresis: hold presence for N ticks after last detection
+    presence_hold_ticks: u32,
     /// Last time data was written to sleep log (every 10s).
     sleep_log_last_write: std::time::Instant,
     /// Trained MLP: previous amplitudes for motion features.
@@ -3037,38 +3039,60 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                             let voted = counts.iter().enumerate().max_by_key(|&(_, c)| c).unwrap().0;
                             let vote_conf = counts[voted] as f32 / s.mlp_vote_window.len() as f32;
 
-                            if median_score < 1.0 {
-                                // ESPectre: no motion → absent (regardless of MLP)
-                                classification.motion_level = "absent".to_string();
-                                classification.presence = false;
-                                classification.confidence = (1.0 - median_score / 1.0).clamp(0.5, 1.0) as f64;
-                            } else if median_score > 2.5 {
-                                // ESPectre: presence confirmed → use MLP for class detail
-                                let voted_name = match voted {
-                                    1 => "present_still", 2 => "present_moving",
-                                    3 => "active", 4 => "lying_still", _ => "present_still"
-                                };
-                                classification.motion_level = voted_name.to_string();
-                                classification.presence = true;
-                                classification.confidence = (median_score / 10.0).clamp(0.3, 1.0) as f64;
-                            } else {
-                                // ESPectre: ambiguous (1-3) → use MLP vote but trust ESPectre for presence
-                                let has_presence = median_score > 1.5;
-                                if has_presence {
+                            // --- Vital signs as static presence indicator ---
+                            let hr_conf = s.latest_vitals.heartbeat_confidence;
+                            let br_conf = s.latest_vitals.breathing_confidence;
+                            let vitals_present = (hr_conf > 0.5 && br_conf > 0.4)
+                                || hr_conf > 0.6 || br_conf > 0.55;
+
+                            // --- Determine raw presence from ESPectre + vitals ---
+                            let esp_present = median_score > 1.0;
+                            let strong_present = median_score > 2.5;
+                            let raw_present = esp_present || vitals_present;
+
+                            // --- Hysteresis: hold presence for 300 ticks (30s at 100ms) ---
+                            if raw_present {
+                                s.presence_hold_ticks = 300; // reset hold timer
+                            } else if s.presence_hold_ticks > 0 {
+                                s.presence_hold_ticks -= 1;
+                            }
+                            let held_present = s.presence_hold_ticks > 0;
+
+                            // --- Final classification ---
+                            if held_present {
+                                // Someone is (or was recently) present
+                                if strong_present {
+                                    // Clear motion → MLP picks the class
                                     let voted_name = match voted {
                                         1 => "present_still", 2 => "present_moving",
                                         3 => "active", 4 => "lying_still", _ => "present_still"
                                     };
                                     classification.motion_level = voted_name.to_string();
+                                    classification.confidence = (median_score / 10.0).clamp(0.3, 1.0) as f64;
+                                } else if vitals_present && !esp_present {
+                                    // Vitals detect breathing but no motion → still/lying
+                                    classification.motion_level = if br_conf > 0.5 {
+                                        "lying_still".to_string()
+                                    } else {
+                                        "present_still".to_string()
+                                    };
+                                    classification.confidence = ((hr_conf * 0.6 + br_conf * 0.4) as f32).clamp(0.3, 0.8) as f64;
                                 } else {
-                                    classification.motion_level = "absent".to_string();
+                                    // Ambiguous or hysteresis hold → present_still
+                                    classification.motion_level = "present_still".to_string();
+                                    classification.confidence = 0.4_f64;
                                 }
-                                classification.presence = has_presence;
-                                classification.confidence = (median_score / 10.0).clamp(0.1, 0.6) as f64;
+                                classification.presence = true;
+                            } else {
+                                // Confirmed absent
+                                classification.motion_level = "absent".to_string();
+                                classification.presence = false;
+                                classification.confidence = (1.0 - median_score).clamp(0.5, 1.0) as f64;
                             }
                             if s.tick % 500 == 0 {
-                                eprintln!("FUSED: esp_mean={:.2} max={:.1} nodes>2={} → {} | MLP: {} ({:.2})",
-                                    median_score, max_score, nodes_above_2, classification.motion_level, cls_name, conf);
+                                eprintln!("FUSED: esp={:.2} vit=hr{:.2}/br{:.2} hold={} → {} | MLP: {} ({:.2})",
+                                    median_score, hr_conf, br_conf, s.presence_hold_ticks,
+                                    classification.motion_level, cls_name, conf);
                             }
                         }
                     }
@@ -3906,6 +3930,7 @@ async fn main() {
         espectre_scores: std::collections::HashMap::new(),
         espectre_motion: false,
         espectre_max_score: 0.0,
+        presence_hold_ticks: 0,
         sleep_log_last_write: std::time::Instant::now(),
         mlp_node_state: std::collections::HashMap::new(),
         mlp_vote_window: Vec::new(),
