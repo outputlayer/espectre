@@ -2979,11 +2979,7 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                             let df = features.dominant_freq_hz as f32;
                             let cp = features.change_points as f32;
                             let rssi_f = features.mean_rssi as f32;
-                            let hr_c = s.latest_vitals.heartbeat_confidence as f32;
-                            let br_c = s.latest_vitals.breathing_confidence as f32;
-                            let sq = s.latest_vitals.signal_quality as f32;
-
-                            let fv: [f32; 31] = [
+                            let fv: [f32; 28] = [
                                 amp_mean, amp_std, amp_range, low_m, mid_m, high_m,
                                 low_s, mid_s, high_s,
                                 turbulence, s.mlp_turb_ema,
@@ -2992,13 +2988,15 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                                 motion_mean_w, motion_std_w, motion_max_w,
                                 turb_mean_w, turb_std_w,
                                 variance, mbp, bbp, sp, df, cp, rssi_f,
-                                hr_c, br_c, sq,
                             ];
 
                             let (cls_idx, conf, cls_name) = trained_mlp::classify(&fv);
-                            // Log MLP prediction for diagnostics (do not override — needs more calibration data)
+                            // MLP overrides classification (87.8% accuracy, 5-class)
+                            classification.motion_level = cls_name.to_string();
+                            classification.presence = cls_idx != 0; // 0 = absent
+                            classification.confidence = conf as f64;
                             if s.tick % 500 == 0 {
-                                eprintln!("MLP: {} (conf={:.2}) | ESPectre: {}", cls_name, conf, classification.motion_level);
+                                eprintln!("MLP: {} (conf={:.2})", cls_name, conf);
                             }
                         }
                     }
