@@ -3046,8 +3046,8 @@ async fn udp_receiver_task(state: SharedState, udp_port: u16) {
                                 || hr_conf > 0.6 || br_conf > 0.55;
 
                             // --- Determine raw presence from ESPectre + vitals ---
-                            let esp_present = median_score > 1.0;
-                            let strong_present = median_score > 2.5;
+                            let esp_present = median_score > 0.5;
+                            let strong_present = median_score > 1.2;
                             let raw_present = esp_present || vitals_present;
 
                             // --- Hysteresis: hold presence for 300 ticks (30s at 100ms) ---
