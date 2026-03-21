@@ -2,7 +2,7 @@
 //!
 //! Lightweight Axum server that:
 //! - Receives ESP32 CSI frames via UDP (port 5005)
-//! - Processes signals using RuVector-powered wifi-densepose-signal crate
+//! - Processes signals using espectre-signal crate
 //! - Broadcasts sensing updates via WebSocket (ws://localhost:8765/ws/sensing)
 //! - Serves the static UI files (port 8080)
 //!
@@ -16,7 +16,7 @@ mod espectre;
 mod trained_mlp;
 
 // Training pipeline modules (exposed via lib.rs)
-use wifi_densepose_sensing_server::{graph_transformer, trainer, dataset, embedding};
+use espectre_server::{graph_transformer, trainer, dataset, embedding};
 
 use std::collections::VecDeque;
 use std::net::SocketAddr;
@@ -49,10 +49,10 @@ use rvf_pipeline::ProgressiveLoader;
 use vital_signs::{VitalSignDetector, VitalSigns};
 
 // ADR-022 Phase 3: Multi-BSSID pipeline integration
-use wifi_densepose_wifiscan::{
+use espectre_wifiscan::{
     BssidRegistry, WindowsWifiPipeline,
 };
-use wifi_densepose_wifiscan::parse_netsh_output as parse_netsh_bssid_output;
+use espectre_wifiscan::parse_netsh_output as parse_netsh_bssid_output;
 
 // ── CLI ──────────────────────────────────────────────────────────────────────
 
@@ -2007,7 +2007,7 @@ async fn health_system(State(state): State<SharedState>) -> Json<serde_json::Val
 async fn health_version() -> Json<serde_json::Value> {
     Json(serde_json::json!({
         "version": env!("CARGO_PKG_VERSION"),
-        "name": "wifi-densepose-sensing-server",
+        "name": "espectre-server",
         "backend": "rust+axum+ruvector",
     }))
 }
@@ -3268,7 +3268,7 @@ async fn main() {
         eprintln!("Exporting RVF container package...");
         use rvf_pipeline::RvfModelBuilder;
 
-        let mut builder = RvfModelBuilder::new("wifi-densepose", "1.0.0");
+        let mut builder = RvfModelBuilder::new("espectre", "1.0.0");
 
         // Vital sign config (default breathing 0.1-0.5 Hz, heartbeat 0.8-2.0 Hz)
         builder.set_vital_config(0.1, 0.5, 0.8, 2.0);
@@ -3286,12 +3286,12 @@ async fn main() {
 
         // Training provenance
         builder.set_training_proof(
-            "wifi-densepose-rs-v1.0.0",
+            "espectre-v1.0.0",
             serde_json::json!({
                 "pipeline": "ADR-023 8-phase",
                 "test_count": 229,
                 "benchmark_fps": 9520,
-                "framework": "wifi-densepose-rs",
+                "framework": "espectre",
             }),
         );
 
@@ -3396,7 +3396,7 @@ async fn main() {
 
             let mut builder = RvfBuilder::new();
             builder.add_manifest(
-                "wifi-densepose-pretrained",
+                "espectre-pretrained",
                 env!("CARGO_PKG_VERSION"),
                 "WiFi DensePose contrastive pretrained model (ADR-024)",
             );
@@ -3647,7 +3647,7 @@ async fn main() {
             let weights = t.params().to_vec();
             let mut builder = RvfBuilder::new();
             builder.add_manifest(
-                "wifi-densepose-trained",
+                "espectre-trained",
                 env!("CARGO_PKG_VERSION"),
                 "WiFi DensePose trained model weights",
             );
@@ -3971,7 +3971,7 @@ async fn main() {
         info!("Saving RVF container to {}", save_path.display());
         let mut builder = RvfBuilder::new();
         builder.add_manifest(
-            "wifi-densepose-sensing",
+            "espectre-sensing",
             env!("CARGO_PKG_VERSION"),
             "WiFi DensePose sensing model state",
         );

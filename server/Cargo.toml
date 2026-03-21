@@ -38,7 +38,7 @@ chrono = { version = "0.4", features = ["serde"] }
 clap = { workspace = true }
 
 # WiFi scanning (Windows multi-BSSID pipeline)
-wifi-densepose-wifiscan = { path = "../wifiscan" }
+espectre-wifiscan = { path = "../wifiscan" }
 
 [dev-dependencies]
 tempfile = "3.10"

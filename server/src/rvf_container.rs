@@ -262,7 +262,7 @@ impl RvfBuilder {
             "model_id": model_id,
             "version": version,
             "description": description,
-            "format": "wifi-densepose-rvf",
+            "format": "espectre-rvf",
             "created_at": chrono::Utc::now().to_rfc3339(),
         });
         let payload = serde_json::to_vec(&manifest).unwrap_or_default();
@@ -775,7 +775,7 @@ mod tests {
     #[test]
     fn metadata_round_trip() {
         let meta = serde_json::json!({
-            "task": "wifi-densepose",
+            "task": "espectre",
             "input_dim": 56,
             "output_dim": 17,
             "hidden_layers": [128, 64],
@@ -787,7 +787,7 @@ mod tests {
 
         let reader = RvfReader::from_bytes(&data).unwrap();
         let decoded = reader.metadata().expect("metadata should be present");
-        assert_eq!(decoded["task"], "wifi-densepose");
+        assert_eq!(decoded["task"], "espectre");
         assert_eq!(decoded["input_dim"], 56);
     }
 
@@ -848,7 +848,7 @@ mod tests {
     fn full_container_round_trip() {
         let mut builder = RvfBuilder::new();
 
-        builder.add_manifest("wifi-densepose-v1", "0.1.0", "WiFi DensePose model");
+        builder.add_manifest("espectre-v1", "0.1.0", "ESPectre model");
         builder.add_weights(&[0.1, 0.2, 0.3, -0.5, 1.0]);
         builder.add_metadata(&serde_json::json!({
             "architecture": "mlp",

@@ -1,4 +1,4 @@
-//! # wifi-densepose-wifiscan
+//! # espectre-wifiscan
 //!
 //! Domain layer for multi-BSSID WiFi scanning and enhanced sensing (ADR-022).
 //!

@@ -1,4 +1,4 @@
-//! Error types for the wifi-densepose-wifiscan crate.
+//! Error types for the espectre-wifiscan crate.
 
 use std::fmt;
 

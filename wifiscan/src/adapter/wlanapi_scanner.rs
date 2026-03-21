@@ -71,8 +71,8 @@ pub struct ScanMetrics {
 /// # Example (sync)
 ///
 /// ```no_run
-/// use wifi_densepose_wifiscan::adapter::wlanapi_scanner::WlanApiScanner;
-/// use wifi_densepose_wifiscan::port::WlanScanPort;
+/// use espectre_wifiscan::adapter::wlanapi_scanner::WlanApiScanner;
+/// use espectre_wifiscan::port::WlanScanPort;
 ///
 /// let scanner = WlanApiScanner::new();
 /// let observations = scanner.scan().unwrap();
