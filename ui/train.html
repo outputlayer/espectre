@@ -123,37 +123,37 @@ body { background: var(--bg-dim); color: var(--fg); font-family: 'Inter', sans-s
   <button class="stop-btn" id="stopBtn" onclick="stopRecording()">STOP RECORDING</button>
 
   <div class="class-grid">
-    <div class="class-btn" id="btn_empty" onclick="startRecording('train_empty_v2', 'empty')">
+    <div class="class-btn" id="btn_empty" onclick="startRecording(recId('train_empty'), 'empty')">
       <div class="icon" style="color:var(--bg4)">&#9723;</div>
       <div class="label">Empty Room</div>
       <div class="desc">Leave the room completely. Close the door.</div>
       <div class="count" id="count_empty">--</div>
     </div>
-    <div class="class-btn" id="btn_still" onclick="startRecording('train_sitting_still_v2', 'still')">
+    <div class="class-btn" id="btn_still" onclick="startRecording(recId('train_sitting_still'), 'still')">
       <div class="icon" style="color:var(--green)">&#9632;</div>
       <div class="label">Sitting Still</div>
       <div class="desc">Sit at desk normally. Minimal movement.</div>
       <div class="count" id="count_still">--</div>
     </div>
-    <div class="class-btn" id="btn_walking" onclick="startRecording('train_walking_v2', 'walking')">
+    <div class="class-btn" id="btn_walking" onclick="startRecording(recId('train_walking'), 'walking')">
       <div class="icon" style="color:var(--yellow)">&#9654;</div>
       <div class="label">Walking / Moving</div>
       <div class="desc">Walk around the room naturally.</div>
       <div class="count" id="count_walking">--</div>
     </div>
-    <div class="class-btn" id="btn_active" onclick="startRecording('train_active_v2', 'active')">
+    <div class="class-btn" id="btn_active" onclick="startRecording(recId('train_active'), 'active')">
       <div class="icon" style="color:var(--red)">&#9733;</div>
       <div class="label">Active / Exercise</div>
       <div class="desc">Jumping, waving, exercising. Big movement.</div>
       <div class="count" id="count_active">--</div>
     </div>
-    <div class="class-btn" id="btn_lying" onclick="startRecording('train_lying_still_v2', 'lying')">
+    <div class="class-btn" id="btn_lying" onclick="startRecording(recId('train_lying_still'), 'lying')">
       <div class="icon" style="color:var(--teal)">&#9644;</div>
       <div class="label">Lying Down</div>
       <div class="desc">Lie in bed/couch. Simulate sleeping position.</div>
       <div class="count" id="count_lying">--</div>
     </div>
-    <div class="class-btn" id="btn_door" onclick="startRecording('train_empty_door_open_v2', 'door')">
+    <div class="class-btn" id="btn_door" onclick="startRecording(recId('train_empty_door_open'), 'door')">
       <div class="icon" style="color:var(--pink)">&#9727;</div>
       <div class="label">Empty + Door Open</div>
       <div class="desc">Leave room but keep door OPEN.</div>
@@ -179,6 +179,12 @@ let recording = false;
 let currentClass = null;
 let timerInterval = null;
 let startTime = null;
+
+function recId(prefix) {
+  const d = new Date();
+  const ts = d.toISOString().slice(0,16).replace(/[-:T]/g, '');
+  return `${prefix}_${ts}`;
+}
 
 function log(msg, type = 'action') {
   const el = document.getElementById('logEntries');
@@ -310,15 +316,58 @@ async function loadExistingRecordings() {
 // Keyboard shortcuts
 document.addEventListener('keydown', (e) => {
   if (e.key === 'Escape' || e.key === ' ') { e.preventDefault(); stopRecording(); }
-  if (e.key === '1') startRecording('train_empty_v2', 'empty');
-  if (e.key === '2') startRecording('train_sitting_still_v2', 'still');
-  if (e.key === '3') startRecording('train_walking_v2', 'walking');
-  if (e.key === '4') startRecording('train_active_v2', 'active');
-  if (e.key === '5') startRecording('train_lying_still_v2', 'lying');
-  if (e.key === '6') startRecording('train_empty_door_open_v2', 'door');
+  if (e.key === '1') startRecording(recId('train_empty'), 'empty');
+  if (e.key === '2') startRecording(recId('train_sitting_still'), 'still');
+  if (e.key === '3') startRecording(recId('train_walking'), 'walking');
+  if (e.key === '4') startRecording(recId('train_active'), 'active');
+  if (e.key === '5') startRecording(recId('train_lying_still'), 'lying');
+  if (e.key === '6') startRecording(recId('train_empty_door_open'), 'door');
 });
 
+// Check if a recording is already in progress (survives page refresh)
+async function checkActiveRecording() {
+  try {
+    // The server tracks recording state — check via list endpoint
+    const resp = await fetch(`${BASE}/api/v1/recording/list`);
+    const data = await resp.json();
+    const active = (data.recordings || []).find(r => r.status === 'recording');
+    if (active) {
+      recording = true;
+      currentClass = guessClassFromId(active.id);
+      // Estimate start time from duration if available
+      startTime = Date.now() - ((active.duration_secs || 0) * 1000);
+
+      document.getElementById('statusBanner').className = 'status-banner recording';
+      document.getElementById('statusText').textContent = `Recording: ${active.id}`;
+      document.getElementById('statusSub').textContent = 'Recording in progress (resumed after refresh)';
+      document.getElementById('timer').style.display = 'block';
+      document.getElementById('stopBtn').className = 'stop-btn visible';
+
+      if (currentClass) {
+        document.getElementById(`btn_${currentClass}`).classList.add('recording');
+      }
+      timerInterval = setInterval(updateTimer, 1000);
+      log(`Resumed active recording: ${active.id}`);
+    }
+  } catch (e) {
+    // silently ignore — server might not support status field
+  }
+}
+
+function guessClassFromId(id) {
+  if (!id) return null;
+  const n = id.toLowerCase();
+  if (n.includes('empty') && n.includes('door')) return 'door';
+  if (n.includes('empty')) return 'empty';
+  if (n.includes('lying')) return 'lying';
+  if (n.includes('still') || n.includes('sitting')) return 'still';
+  if (n.includes('walking')) return 'walking';
+  if (n.includes('active')) return 'active';
+  return null;
+}
+
 // Init
+checkActiveRecording();
 loadExistingRecordings();
 log('Training session ready. Press 1-6 or click a button.');
 </script>
