@@ -72,7 +72,7 @@ def main():
 
     recordings = {
         "empty": [DATA_DIR / "train_empty_v3.jsonl"],
-        "lying": [DATA_DIR / "train_lying_v3.jsonl", DATA_DIR / "train_lying_v4.jsonl"],
+        "lying": [DATA_DIR / "train_lying_v3.jsonl", DATA_DIR / "train_lying_v4.jsonl", DATA_DIR / "train_lying_v5.jsonl"],
         "walking": [DATA_DIR / "train_walking_v3.jsonl", DATA_DIR / "train_walking_v4.jsonl"],
         "sitting": [DATA_DIR / "train_sitting_v3.jsonl", DATA_DIR / "train_sitting_v4.jsonl"],
     }
