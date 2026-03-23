@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
-"""Prepare WiFi CSI data — v4: fresh data only (same-day, same conditions).
+"""Prepare WiFi CSI data — v5: multi-session training for drift invariance.
 
-Uses only v4/v5/v6 recordings from today's session.
-Ensures zero distribution shift between train and val.
-Old data excluded to eliminate cross-session contamination.
+Uses recordings from TWO sessions at different times.
+Session 1: train_{empty_v4, lying_v6, sitting_v5, walking_v5}
+Session 2: train_{empty_v5, lying_v7, sitting_v6, walking_v6}
+
+Multi-session data teaches the CNN to extract drift-invariant features.
 """
 import json
 import numpy as np
@@ -67,12 +69,10 @@ def create_windows(data, window_size, stride):
 
 
 def augment_window(window, n_augments=3):
-    """More augmentation to compensate for smaller dataset."""
     augmented = []
     for _ in range(n_augments):
         w = window.copy()
         w += np.random.normal(0, 0.02, w.shape).astype(np.float32)
-        # Drift augmentation
         drift = np.random.normal(0, 0.15, (1, w.shape[1])).astype(np.float32)
         w += drift
         scale = np.random.uniform(0.85, 1.15, (1, w.shape[1])).astype(np.float32)
@@ -84,12 +84,15 @@ def augment_window(window, n_augments=3):
 def main():
     OUTPUT_DIR.mkdir(exist_ok=True)
 
-    # FRESH DATA ONLY — same-day recordings
+    S1_DIR = DATA_DIR  # Session 1 files in data/recordings/ (symlinked or same dir)
+    S2_DIR = DATA_DIR / "data_s2"
+
+    # Multi-session recordings
     recordings = {
-        "empty":   [DATA_DIR / "train_empty_v4.jsonl"],
-        "lying":   [DATA_DIR / "train_lying_v6.jsonl"],
-        "walking": [DATA_DIR / "train_walking_v5.jsonl"],
-        "sitting": [DATA_DIR / "train_sitting_v5.jsonl"],
+        "empty":   [S1_DIR / "train_empty_v4.jsonl",   S2_DIR / "train_empty_v5.jsonl"],
+        "lying":   [S1_DIR / "train_lying_v6.jsonl",    S2_DIR / "train_lying_v7.jsonl"],
+        "walking": [S1_DIR / "train_walking_v5.jsonl",  S2_DIR / "train_walking_v6.jsonl"],
+        "sitting": [S1_DIR / "train_sitting_v5.jsonl",  S2_DIR / "train_sitting_v6.jsonl"],
     }
 
     for name, paths in recordings.items():
@@ -97,26 +100,48 @@ def main():
             if not path.exists():
                 print(f"ERROR: {path} not found"); sys.exit(1)
 
-    # 1. Parse
-    print("=== Parsing fresh recordings ===")
-    raw_data = {}
+    # 1. Parse all sessions
+    print("=== Parsing multi-session recordings ===")
+    session_data = {}  # {class: [(session_idx, data), ...]}
     for name, paths in recordings.items():
-        parts = [parse_recording(p) for p in paths]
+        session_data[name] = []
+        for i, p in enumerate(paths):
+            raw = parse_recording(p)
+            session_data[name].append((i, raw))
+
+    # 2. L2 normalize each session independently
+    print("\n=== L2 normalization (per-session) ===")
+    for name in session_data:
+        for j, (sid, data) in enumerate(session_data[name]):
+            session_data[name][j] = (sid, l2_normalize(data))
+
+    # 3. Compute baseline from EACH session's empty data, then subtract per-session
+    print("\n=== Per-session baseline subtraction ===")
+    session_baselines = {}
+    for sid, data in session_data["empty"]:
+        bl = data.mean(axis=0)
+        session_baselines[sid] = bl
+        print(f"  Session {sid+1} baseline: mean={bl.mean():.6f}, std={bl.std():.6f}")
+
+    # Save combined baseline (average of all sessions) for inference
+    combined_baseline = np.mean([session_baselines[s] for s in session_baselines], axis=0)
+    np.save(OUTPUT_DIR / "baseline.npy", combined_baseline)
+    print(f"  Combined baseline: mean={combined_baseline.mean():.6f}")
+
+    # Subtract each session's own baseline
+    for name in session_data:
+        for j, (sid, data) in enumerate(session_data[name]):
+            bl = session_baselines[sid]
+            session_data[name][j] = (sid, data - bl[np.newaxis, :, :])
+
+    # 4. Concatenate all sessions per class
+    print(f"\n=== Merging sessions ===")
+    raw_data = {}
+    for name in session_data:
+        parts = [data for _, data in session_data[name]]
         raw_data[name] = np.concatenate(parts, axis=0)
-
-    # 2. L2 normalize
-    print("\n=== L2 normalization ===")
-    for name in raw_data:
-        raw_data[name] = l2_normalize(raw_data[name])
-
-    # 3. Baseline from empty
-    baseline = raw_data["empty"].mean(axis=0)
-    np.save(OUTPUT_DIR / "baseline.npy", baseline)
-    print(f"  Baseline shape: {baseline.shape}, mean: {baseline.mean():.6f}")
-
-    # 4. Subtract baseline
-    for name in raw_data:
-        raw_data[name] = raw_data[name] - baseline[np.newaxis, :, :]
+        sizes = [data.shape[0] for _, data in session_data[name]]
+        print(f"  {name}: {' + '.join(str(s) for s in sizes)} = {raw_data[name].shape[0]} frames")
 
     # 5. Subsample
     print(f"\n=== Subsample (1/{SUBSAMPLE_RATE}) ===")
@@ -138,7 +163,6 @@ def main():
         tw = create_windows(data[:split], WINDOW_SIZE, WINDOW_STRIDE)
         vw = create_windows(data[split:], WINDOW_SIZE, WINDOW_STRIDE)
 
-        # More augmentation for smaller dataset (3x instead of 2x)
         aug_windows = []
         for i in range(tw.shape[0]):
             aug_windows.extend(augment_window(tw[i], n_augments=3))
@@ -185,9 +209,10 @@ def main():
     print(f"  X_train: {X_train.shape} ({X_train.nbytes/1e6:.1f} MB)")
     print(f"  X_val:   {X_val.shape} ({X_val.nbytes/1e6:.1f} MB)")
 
-    print(f"\n=== Pipeline: FRESH ONLY ===")
-    print(f"  L2 norm → baseline (v4 empty) → global norm → drift augmentation")
-    print(f"  Zero cross-session contamination")
+    print(f"\n=== Pipeline: MULTI-SESSION ===")
+    print(f"  L2 norm → per-session baseline → global norm → drift augmentation")
+    print(f"  Sessions: 2 (different times of day)")
+    print(f"  Goal: drift-invariant features")
 
 
 if __name__ == "__main__":
